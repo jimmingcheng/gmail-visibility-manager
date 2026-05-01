@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "request_id": "sample-coach-grant",
+  "requested_by": "donna",
+  "action": "create_visibility_grant",
+  "email": "coach@example.com",
+  "classification_labels": [
+    "Kids/Activities"
+  ],
+  "rationale": "New soccer coach contact."
+}

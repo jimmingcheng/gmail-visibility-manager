@@ -1,0 +1,13 @@
+{
+  "state_path": "~/.local/state/gmail-visibility-manager/state.db",
+  "audit_log_path": "~/.local/state/gmail-visibility-manager/audit.jsonl",
+  "visibility_label": "Donna",
+  "allowed_classification_labels": [
+    "Kids/Activities",
+    "Kids/School",
+    "House/Renovation",
+    "Receipts",
+    "Travel"
+  ],
+  "sensitive_classification_labels": []
+}

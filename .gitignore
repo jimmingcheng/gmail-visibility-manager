@@ -1,0 +1,14 @@
+# Local trusted config/state
+config.local.json
+*.db
+*.db-shm
+*.db-wal
+audit.jsonl
+
+# Go build/test artifacts
+/gmail-visibility-manager
+*.test
+coverage.out
+
+# Editor and OS noise
+.DS_Store
