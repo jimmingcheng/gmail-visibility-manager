@@ -1,0 +1,93 @@
+package service
+
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/jimmingcheng/gmail-visibility-manager/internal/config"
+)
+
+// Spec is the rendered service manifest input for one daemon instance.
+type Spec struct {
+	Instance      string
+	ConfigPath    string
+	BinaryPath    string
+	StdoutLogPath string
+	StderrLogPath string
+}
+
+// BuildSpec converts config and paths into a service render spec.
+func BuildSpec(cfg config.Config, configPath, binaryPath string) (Spec, error) {
+	configPath = strings.TrimSpace(configPath)
+	binaryPath = strings.TrimSpace(binaryPath)
+	if configPath == "" {
+		return Spec{}, fmt.Errorf("missing config path")
+	}
+	if binaryPath == "" {
+		return Spec{}, fmt.Errorf("missing binary path")
+	}
+	configAbs, err := filepath.Abs(configPath)
+	if err != nil {
+		return Spec{}, fmt.Errorf("resolve config path: %w", err)
+	}
+	binaryAbs, err := filepath.Abs(binaryPath)
+	if err != nil {
+		return Spec{}, fmt.Errorf("resolve binary path: %w", err)
+	}
+	logDir := filepath.Join(filepath.Dir(cfg.StatePath), "logs")
+	return Spec{
+		Instance:      cfg.Instance,
+		ConfigPath:    configAbs,
+		BinaryPath:    binaryAbs,
+		StdoutLogPath: filepath.Join(logDir, "gmail-visibility-manager.stdout.log"),
+		StderrLogPath: filepath.Join(logDir, "gmail-visibility-manager.stderr.log"),
+	}, nil
+}
+
+// SystemdUnitName returns the suggested user-unit filename.
+func SystemdUnitName(instance string) string {
+	return fmt.Sprintf("gmail-visibility-manager@%s.service", sanitizeInstance(instance))
+}
+
+// LaunchdLabel returns the suggested launchd label.
+func LaunchdLabel(instance string) string {
+	return fmt.Sprintf("com.gmail-visibility-manager.%s", sanitizeInstance(instance))
+}
+
+// LaunchdFileName returns the suggested plist filename.
+func LaunchdFileName(instance string) string {
+	return LaunchdLabel(instance) + ".plist"
+}
+
+func sanitizeInstance(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return "instance"
+	}
+	var out []rune
+	lastDash := false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			out = append(out, r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			out = append(out, r)
+			lastDash = false
+		case r == '.' || r == '_' || r == '-':
+			out = append(out, r)
+			lastDash = false
+		default:
+			if !lastDash {
+				out = append(out, '-')
+				lastDash = true
+			}
+		}
+	}
+	normalized := strings.Trim(string(out), "-")
+	if normalized == "" {
+		return "instance"
+	}
+	return normalized
+}

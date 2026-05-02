@@ -1,5 +1,6 @@
 # Local trusted config/state
 config.local.json
+oauth-client.json
 *.db
 *.db-shm
 *.db-wal

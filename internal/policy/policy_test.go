@@ -8,12 +8,8 @@ import (
 )
 
 func TestEvaluateAllowedGrantNeedsApproval(t *testing.T) {
-	cfg := config.Config{
-		StatePath:                   "/tmp/state.db",
-		AuditLogPath:                "/tmp/audit.jsonl",
-		VisibilityLabel:             "Donna",
-		AllowedClassificationLabels: []string{"Kids/Activities"},
-	}
+	cfg := config.Default()
+	cfg.AllowedClassificationLabels = []string{"Kids/Activities"}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -36,12 +32,8 @@ func TestEvaluateAllowedGrantNeedsApproval(t *testing.T) {
 }
 
 func TestEvaluateBlocksDisallowedLabel(t *testing.T) {
-	cfg := config.Config{
-		StatePath:                   "/tmp/state.db",
-		AuditLogPath:                "/tmp/audit.jsonl",
-		VisibilityLabel:             "Donna",
-		AllowedClassificationLabels: []string{"Kids/Activities"},
-	}
+	cfg := config.Default()
+	cfg.AllowedClassificationLabels = []string{"Kids/Activities"}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -58,12 +50,8 @@ func TestEvaluateBlocksDisallowedLabel(t *testing.T) {
 }
 
 func TestEvaluateBlocksVisibilityLabelAsClassification(t *testing.T) {
-	cfg := config.Config{
-		StatePath:                   "/tmp/state.db",
-		AuditLogPath:                "/tmp/audit.jsonl",
-		VisibilityLabel:             "Donna",
-		AllowedClassificationLabels: []string{"Kids/Activities"},
-	}
+	cfg := config.Default()
+	cfg.AllowedClassificationLabels = []string{"Kids/Activities"}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}

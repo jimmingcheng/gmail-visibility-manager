@@ -1,6 +1,16 @@
 {
+  "instance": "default",
+  "account_email": "you@example.com",
+  "client_uid": 1001,
+  "socket_path": "/var/tmp/gmail-visibility-manager/default.sock",
+  "socket_mode": "0660",
   "state_path": "~/.local/state/gmail-visibility-manager/state.db",
   "audit_log_path": "~/.local/state/gmail-visibility-manager/audit.jsonl",
+  "oauth_client_path": "~/.config/gmail-visibility-manager/oauth-client.json",
+  "auth_store": {
+    "backend": "system",
+    "service": "gmail-visibility-manager"
+  },
   "visibility_label": "Donna",
   "allowed_classification_labels": [
     "Kids/Activities",
@@ -9,5 +19,11 @@
     "Receipts",
     "Travel"
   ],
-  "sensitive_classification_labels": []
+  "sensitive_classification_labels": [],
+  "discord": {
+    "token_env": "GMAIL_VISIBILITY_MANAGER_DISCORD_TOKEN",
+    "channel_id": "",
+    "allowed_user_ids": [],
+    "command_prefix": "!gvm"
+  }
 }

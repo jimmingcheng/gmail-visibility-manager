@@ -383,6 +383,22 @@ func (s *Store) LookupGrant(ctx context.Context, email string) (GrantRecord, err
 	return scanGrant(row)
 }
 
+// SetGrantFilterID records the Gmail filter ID for an active canonical grant.
+func (s *Store) SetGrantFilterID(ctx context.Context, email, filterID string) error {
+	email, err := request.NormalizeEmail(email)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE grants
+		SET gmail_filter_id = ?, updated_at = ?
+		WHERE email = ? AND status = 'active'`,
+		strings.TrimSpace(filterID), time.Now().UTC().Format(time.RFC3339), email)
+	if err != nil {
+		return fmt.Errorf("update grant filter id: %w", err)
+	}
+	return nil
+}
+
 const requestColumns = `request_id, request_hash, schema_version, created_at, received_at,
 	requested_by, action, email, classification_labels_json, rationale, status,
 	policy_verdict, policy_reasons_json, approval_required, decided_by,
