@@ -125,7 +125,11 @@ func runDaemon(configPath string, args []string) int {
 			return 1
 		}
 		defer bot.Close()
-		fmt.Fprintf(os.Stderr, "discord approval adapter enabled for channel %s\n", cfg.Discord.ChannelID)
+		if strings.TrimSpace(cfg.Discord.ChannelID) == "" {
+			fmt.Fprintln(os.Stderr, "discord approval adapter enabled for direct messages")
+		} else {
+			fmt.Fprintf(os.Stderr, "discord approval adapter enabled for channel %s\n", cfg.Discord.ChannelID)
+		}
 	}
 
 	srv, err := daemon.New(cfg, mgr, bot)
@@ -403,8 +407,24 @@ func runService(configPath string, args []string) int {
 
 func runClient(socketPath string, jsonOut bool, args []string) int {
 	if len(args) == 0 {
-		usage(os.Stderr)
+		clientUsage(os.Stderr)
 		return 2
+	}
+	switch args[0] {
+	case "help":
+		if len(args) != 1 {
+			clientUsage(os.Stderr)
+			return 2
+		}
+		return printClientHelp(socketPath, jsonOut)
+	case "schema":
+		if len(args) != 1 {
+			clientUsage(os.Stderr)
+			return 2
+		}
+		return printClientSchema(socketPath, jsonOut)
+	case "sample-request":
+		return runClientSampleRequest(args[1:])
 	}
 	if strings.TrimSpace(socketPath) == "" {
 		fmt.Fprintln(os.Stderr, "missing --socket or GMAIL_VISIBILITY_MANAGER_SOCKET")
@@ -419,7 +439,7 @@ func runClient(socketPath string, jsonOut bool, args []string) int {
 		return callAndPrint(ctx, socketPath, jsonOut, rpc.MethodSystemInfo, map[string]any{})
 	case "submit":
 		if len(args) != 2 {
-			usage(os.Stderr)
+			clientUsage(os.Stderr)
 			return 2
 		}
 		data, err := readInput(args[1])
@@ -435,20 +455,130 @@ func runClient(socketPath string, jsonOut bool, args []string) int {
 		return callAndPrint(ctx, socketPath, jsonOut, rpc.MethodGrantSubmit, req)
 	case "lookup":
 		if len(args) != 2 {
-			usage(os.Stderr)
+			clientUsage(os.Stderr)
 			return 2
 		}
 		return callAndPrint(ctx, socketPath, jsonOut, rpc.MethodGrantLookup, rpc.GrantLookupParams{Email: args[1]})
 	case "grants":
 		if len(args) != 2 || args[1] != "list" {
-			usage(os.Stderr)
+			clientUsage(os.Stderr)
 			return 2
 		}
 		return callAndPrint(ctx, socketPath, jsonOut, rpc.MethodGrantList, rpc.GrantListParams{})
 	default:
-		usage(os.Stderr)
+		clientUsage(os.Stderr)
 		return 2
 	}
+}
+
+func printClientHelp(socketPath string, jsonOut bool) int {
+	if jsonOut {
+		guidance := staticClientGuidance()
+		if info, err := fetchSystemInfo(socketPath); err == nil {
+			guidance = info.Client
+		}
+		return printJSON(guidance)
+	}
+	info, err := fetchSystemInfo(socketPath)
+	if err == nil {
+		printClientGuidance(os.Stdout, info.Client)
+		return 0
+	}
+	printClientGuidance(os.Stdout, staticClientGuidance())
+	if strings.TrimSpace(socketPath) == "" {
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout, "Tip: set GMAIL_VISIBILITY_MANAGER_SOCKET or pass --socket, then run `gmail-visibility-manager client info` for live allowed labels.")
+	} else {
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintf(os.Stdout, "Tip: live daemon guidance was unavailable: %v\n", err)
+	}
+	return 0
+}
+
+func printClientSchema(socketPath string, jsonOut bool) int {
+	guidance := staticClientGuidance()
+	if info, err := fetchSystemInfo(socketPath); err == nil {
+		guidance = info.Client
+	}
+	if jsonOut {
+		return printJSON(guidance.Request)
+	}
+	fmt.Fprintln(os.Stdout, "Strict request JSON object:")
+	fmt.Fprintf(os.Stdout, "- schema_version: %s\n", guidance.Request.SchemaVersion)
+	fmt.Fprintf(os.Stdout, "- actions: %s\n", strings.Join(guidance.Request.Actions, ", "))
+	fmt.Fprintf(os.Stdout, "- required fields: %s\n", strings.Join(guidance.Request.RequiredFields, ", "))
+	fmt.Fprintf(os.Stdout, "- optional fields: %s\n", strings.Join(guidance.Request.OptionalFields, ", "))
+	if len(guidance.AllowedClassificationLabels) > 0 {
+		fmt.Fprintf(os.Stdout, "- allowed classification_labels: %s\n", strings.Join(guidance.AllowedClassificationLabels, ", "))
+	}
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "Example:")
+	return printJSON(guidance.Request.Example)
+}
+
+func runClientSampleRequest(args []string) int {
+	fs := flag.NewFlagSet("client sample-request", flag.ContinueOnError)
+	email := fs.String("email", "sender@example.com", "Exact sender email address to request")
+	requestID := fs.String("request-id", "", "Stable unique request id")
+	requestedBy := fs.String("requested-by", "donna", "Requester identity")
+	action := fs.String("action", request.ActionCreateVisibilityGrant, "Request action")
+	rationale := fs.String("rationale", "Future messages from this exact sender should be visible to Donna for the named workflow.", "Human-readable reason for trusted approval")
+	var labels stringListFlag
+	fs.Var(&labels, "label", "Allowed classification label; repeat for multiple labels")
+	fs.SetOutput(os.Stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return 2
+	}
+	if len(labels) == 0 {
+		labels = append(labels, "Kids/Activities")
+	}
+	id := strings.TrimSpace(*requestID)
+	if id == "" {
+		id = defaultRequestID(*email)
+	}
+	req := request.VisibilityRequest{
+		SchemaVersion:        request.SchemaVersion1,
+		RequestID:            id,
+		RequestedBy:          strings.TrimSpace(*requestedBy),
+		Action:               strings.TrimSpace(*action),
+		Email:                strings.TrimSpace(*email),
+		ClassificationLabels: []string(labels),
+		Rationale:            strings.TrimSpace(*rationale),
+	}
+	return printJSON(req)
+}
+
+func fetchSystemInfo(socketPath string) (rpc.SystemInfo, error) {
+	if strings.TrimSpace(socketPath) == "" {
+		return rpc.SystemInfo{}, fmt.Errorf("missing socket")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := rpc.Call(ctx, socketPath, rpc.Request{
+		V:      rpc.Version1,
+		ID:     fmt.Sprintf("cli-info-%d", time.Now().UnixNano()),
+		Method: rpc.MethodSystemInfo,
+		Params: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		return rpc.SystemInfo{}, err
+	}
+	if !resp.OK {
+		return rpc.SystemInfo{}, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+	data, err := json.Marshal(resp.Result)
+	if err != nil {
+		return rpc.SystemInfo{}, err
+	}
+	var info rpc.SystemInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return rpc.SystemInfo{}, err
+	}
+	return info, nil
 }
 
 func callAndPrint(ctx context.Context, socketPath string, jsonOut bool, method string, params any) int {
@@ -854,6 +984,184 @@ func defaultConfigPath() string {
 	return filepath.Join(home, ".config", "gmail-visibility-manager", "config.json")
 }
 
+type stringListFlag []string
+
+func (f *stringListFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *stringListFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("label must not be empty")
+	}
+	*f = append(*f, value)
+	return nil
+}
+
+func defaultRequestID(email string) string {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		email = "sender@example.com"
+	}
+	base := strings.Builder{}
+	lastDash := false
+	for _, r := range email {
+		switch {
+		case r >= 'a' && r <= 'z':
+			base.WriteRune(r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			base.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				base.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	slug := strings.Trim(base.String(), "-")
+	if slug == "" {
+		slug = "sender"
+	}
+	if len(slug) > 64 {
+		slug = strings.Trim(slug[:64], "-")
+	}
+	return fmt.Sprintf("%s-%s", slug, time.Now().Format("20060102"))
+}
+
+func staticClientGuidance() rpc.ClientGuidance {
+	return rpc.ClientGuidance{
+		Purpose:         "Request trusted approval for future Gmail messages from one exact sender to become Donna-visible through safe-gmail.",
+		SocketEnv:       "GMAIL_VISIBILITY_MANAGER_SOCKET",
+		VisibilityLabel: "Donna",
+		AllowedClassificationLabels: []string{
+			"Kids/Activities",
+			"Kids/School",
+			"House/Renovation",
+		},
+		Request: rpc.VisibilityRequestGuidance{
+			SchemaVersion: request.SchemaVersion1,
+			Actions: []string{
+				request.ActionCreateVisibilityGrant,
+				request.ActionUpdateGrantLabels,
+			},
+			RequiredFields: []string{
+				"schema_version",
+				"requested_by",
+				"action",
+				"email",
+			},
+			OptionalFields: []string{
+				"request_id",
+				"created_at",
+				"classification_labels",
+				"rationale",
+			},
+			Example: request.VisibilityRequest{
+				SchemaVersion: request.SchemaVersion1,
+				RequestID:     "sender-visibility-grant-2026",
+				RequestedBy:   "donna",
+				Action:        request.ActionCreateVisibilityGrant,
+				Email:         "sender@example.com",
+				ClassificationLabels: []string{
+					"Kids/Activities",
+				},
+				Rationale: "Future messages from this exact sender should be visible to Donna for the named workflow.",
+			},
+		},
+		Commands: []rpc.CommandGuidance{
+			{
+				Command:     "gmail-visibility-manager client help",
+				Purpose:     "Print this agent-oriented workflow guide.",
+				MachineSafe: true,
+			},
+			{
+				Command:     "gmail-visibility-manager client info",
+				Purpose:     "Print live daemon capabilities, allowed labels, and request schema guidance.",
+				MachineSafe: true,
+			},
+			{
+				Command:     "gmail-visibility-manager client lookup EMAIL",
+				Purpose:     "Check whether one exact sender already has an active Donna visibility grant.",
+				MachineSafe: true,
+			},
+			{
+				Command:     "gmail-visibility-manager client grants list",
+				Purpose:     "List active Donna-visible sender grants.",
+				MachineSafe: true,
+			},
+			{
+				Command:     "gmail-visibility-manager client sample-request --email EMAIL --label LABEL --rationale TEXT > request.json",
+				Purpose:     "Generate strict request JSON to inspect or submit.",
+				MachineSafe: true,
+			},
+			{
+				Command:     "gmail-visibility-manager client submit request.json",
+				Purpose:     "Submit a visibility request for trusted human approval.",
+				WhenToUse:   "Only after checking lookup/grants and writing a narrow request for one exact sender.",
+				MachineSafe: false,
+			},
+		},
+		Notes: []string{
+			"Do not use this tool for reading Gmail. Use safe-gmail for visible mail after approval.",
+			"Do not request Gmail query language, domains, wildcards, or multiple senders.",
+			"Do not include the visibility label in classification_labels; the trusted manager adds it.",
+			"Approval is human-gated. Submitting a request does not immediately change Gmail.",
+			"Unknown JSON fields are rejected.",
+		},
+	}
+}
+
+func printClientGuidance(w io.Writer, guidance rpc.ClientGuidance) {
+	fmt.Fprintln(w, "Gmail Visibility Manager client help")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, guidance.Purpose)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Use this tool only to request future Donna visibility for one exact Gmail sender.")
+	fmt.Fprintln(w, "Use safe-gmail to read mail after a request is approved.")
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Socket env: %s\n", guidance.SocketEnv)
+	fmt.Fprintf(w, "Visibility label added by trusted manager: %s\n", guidance.VisibilityLabel)
+	if len(guidance.AllowedClassificationLabels) > 0 {
+		fmt.Fprintf(w, "Allowed classification labels: %s\n", strings.Join(guidance.AllowedClassificationLabels, ", "))
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Workflow for agents:")
+	fmt.Fprintln(w, "1. Run `gmail-visibility-manager client info` for live policy/schema guidance.")
+	fmt.Fprintln(w, "2. Run `gmail-visibility-manager client lookup sender@example.com` to avoid duplicate requests.")
+	fmt.Fprintln(w, "3. Generate JSON with `gmail-visibility-manager client sample-request --email sender@example.com --label 'Kids/Activities' --rationale '...' > request.json`.")
+	fmt.Fprintln(w, "4. Inspect the JSON. It must request one exact sender only.")
+	fmt.Fprintln(w, "5. Submit with `gmail-visibility-manager client submit request.json`.")
+	fmt.Fprintln(w, "6. Wait for trusted human approval. Approval normally happens through Discord DM.")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Request JSON fields:")
+	fmt.Fprintf(w, "- schema_version: %s\n", guidance.Request.SchemaVersion)
+	fmt.Fprintf(w, "- actions: %s\n", strings.Join(guidance.Request.Actions, ", "))
+	fmt.Fprintf(w, "- required: %s\n", strings.Join(guidance.Request.RequiredFields, ", "))
+	fmt.Fprintf(w, "- optional: %s\n", strings.Join(guidance.Request.OptionalFields, ", "))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Commands:")
+	for _, command := range guidance.Commands {
+		safety := "mutating"
+		if command.MachineSafe {
+			safety = "read-only/safe"
+		}
+		fmt.Fprintf(w, "- %s\n  %s (%s)\n", command.Command, command.Purpose, safety)
+		if command.WhenToUse != "" {
+			fmt.Fprintf(w, "  Use when: %s\n", command.WhenToUse)
+		}
+	}
+	if len(guidance.Notes) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Rules:")
+		for _, note := range guidance.Notes {
+			fmt.Fprintf(w, "- %s\n", note)
+		}
+	}
+}
+
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] run")
@@ -862,7 +1170,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] gmail profile")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] gmail reconcile [--apply]")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] service print-systemd|print-launchd [--binary PATH]")
-	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client ping|info|submit|lookup|grants list")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client help|info|schema|sample-request|ping|submit|lookup|grants list")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] validate request.json")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] submit request.json")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] list [--pending|--recent]")
@@ -871,4 +1179,15 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] deny [--by NAME] [--reason TEXT] REQUEST_ID")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] grants list")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] grants lookup EMAIL")
+}
+
+func clientUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client help")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client info")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client schema")
+	fmt.Fprintln(w, "  gmail-visibility-manager client sample-request [--email EMAIL] [--label LABEL] [--request-id ID] [--rationale TEXT]")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client lookup EMAIL")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client grants list")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client submit request.json")
 }

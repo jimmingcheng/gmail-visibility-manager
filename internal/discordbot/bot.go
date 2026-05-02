@@ -2,6 +2,7 @@ package discordbot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ type Bot struct {
 
 // New returns nil when Discord config is incomplete or the token env is unset.
 func New(cfg config.DiscordConfig, mgr *manager.Manager) (*Bot, error) {
-	if strings.TrimSpace(cfg.ChannelID) == "" || len(cfg.AllowedUserIDs) == 0 {
+	if len(cfg.AllowedUserIDs) == 0 {
 		return nil, nil
 	}
 	token := strings.TrimSpace(os.Getenv(cfg.TokenEnv))
@@ -39,6 +40,9 @@ func New(cfg config.DiscordConfig, mgr *manager.Manager) (*Bot, error) {
 		if id = strings.TrimSpace(id); id != "" {
 			allowed[id] = true
 		}
+	}
+	if len(allowed) == 0 {
+		return nil, nil
 	}
 	bot := &Bot{
 		cfg:     cfg,
@@ -88,15 +92,33 @@ func (b *Bot) NotifyPending(ctx context.Context, requestID string) error {
 		record.RequestID,
 		b.cfg.CommandPrefix,
 		record.RequestID)
-	_, err = b.session.ChannelMessageSend(b.cfg.ChannelID, msg)
-	return err
+	if strings.TrimSpace(b.cfg.ChannelID) != "" {
+		_, err = b.session.ChannelMessageSend(b.cfg.ChannelID, msg)
+		return err
+	}
+
+	var errs []error
+	for userID := range b.allowed {
+		dm, err := b.session.UserChannelCreate(userID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("open DM with %s: %w", userID, err))
+			continue
+		}
+		if _, err := b.session.ChannelMessageSend(dm.ID, msg); err != nil {
+			errs = append(errs, fmt.Errorf("send DM to %s: %w", userID, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (b *Bot) onMessage(_ *discordgo.Session, msg *discordgo.MessageCreate) {
 	if msg == nil || msg.Author == nil || msg.Author.Bot {
 		return
 	}
-	if msg.ChannelID != b.cfg.ChannelID {
+	if strings.TrimSpace(b.cfg.ChannelID) != "" && msg.ChannelID != b.cfg.ChannelID {
+		return
+	}
+	if strings.TrimSpace(b.cfg.ChannelID) == "" && strings.TrimSpace(msg.GuildID) != "" {
 		return
 	}
 	if !b.allowed[msg.Author.ID] {

@@ -145,6 +145,77 @@ func (s *Server) dispatch(req rpc.Request) rpc.Response {
 				rpc.MethodGrantLookup,
 				rpc.MethodGrantList,
 			},
+			Client: rpc.ClientGuidance{
+				Purpose:                     "Request trusted approval for future Gmail messages from one exact sender to become Donna-visible through safe-gmail.",
+				SocketEnv:                   "GMAIL_VISIBILITY_MANAGER_SOCKET",
+				VisibilityLabel:             s.cfg.VisibilityLabel,
+				AllowedClassificationLabels: append([]string(nil), s.cfg.AllowedClassificationLabels...),
+				Request: rpc.VisibilityRequestGuidance{
+					SchemaVersion: request.SchemaVersion1,
+					Actions: []string{
+						request.ActionCreateVisibilityGrant,
+						request.ActionUpdateGrantLabels,
+					},
+					RequiredFields: []string{
+						"schema_version",
+						"requested_by",
+						"action",
+						"email",
+					},
+					OptionalFields: []string{
+						"request_id",
+						"created_at",
+						"classification_labels",
+						"rationale",
+					},
+					Example: request.VisibilityRequest{
+						SchemaVersion: request.SchemaVersion1,
+						RequestID:     "sender-visibility-grant-2026",
+						RequestedBy:   "donna",
+						Action:        request.ActionCreateVisibilityGrant,
+						Email:         "sender@example.com",
+						ClassificationLabels: []string{
+							firstAllowedLabel(s.cfg.AllowedClassificationLabels),
+						},
+						Rationale: "Future messages from this exact sender should be visible to Donna for the named workflow.",
+					},
+				},
+				Commands: []rpc.CommandGuidance{
+					{
+						Command:     "gmail-visibility-manager client info",
+						Purpose:     "Print daemon capabilities, allowed labels, and request schema guidance.",
+						MachineSafe: true,
+					},
+					{
+						Command:     "gmail-visibility-manager client lookup EMAIL",
+						Purpose:     "Check whether one exact sender already has an active Donna visibility grant.",
+						MachineSafe: true,
+					},
+					{
+						Command:     "gmail-visibility-manager client grants list",
+						Purpose:     "List active Donna-visible sender grants.",
+						MachineSafe: true,
+					},
+					{
+						Command:     "gmail-visibility-manager client sample-request --email EMAIL --label LABEL --rationale TEXT > request.json",
+						Purpose:     "Generate a strict request JSON file to inspect or submit.",
+						MachineSafe: true,
+					},
+					{
+						Command:     "gmail-visibility-manager client submit request.json",
+						Purpose:     "Submit a visibility request for trusted human approval.",
+						WhenToUse:   "Only after checking lookup/grants and writing a narrow request for one exact sender.",
+						MachineSafe: false,
+					},
+				},
+				Notes: []string{
+					"Do not use this tool for reading Gmail. Use safe-gmail for visible mail after approval.",
+					"Do not request Gmail query language, domains, wildcards, or multiple senders.",
+					"Do not include the visibility label in classification_labels; the trusted manager adds it.",
+					"Approval is human-gated. Submitting a request does not immediately change Gmail.",
+					"Unknown JSON fields are rejected.",
+				},
+			},
 		})
 	case rpc.MethodGrantSubmit:
 		parsed, err := request.ParseStrict(req.Params)
@@ -185,6 +256,15 @@ func (s *Server) dispatch(req rpc.Request) rpc.Response {
 	default:
 		return rpc.NewError(req.ID, "method_not_allowed", "method is not exposed by this daemon", false)
 	}
+}
+
+func firstAllowedLabel(labels []string) string {
+	for _, label := range labels {
+		if strings.TrimSpace(label) != "" {
+			return label
+		}
+	}
+	return "Kids/Activities"
 }
 
 func writeResponse(conn net.Conn, resp rpc.Response) error {

@@ -235,11 +235,27 @@ Donna's user can submit over the socket:
 ```sh
 export GMAIL_VISIBILITY_MANAGER_SOCKET=/var/tmp/gmail-visibility-manager/default.sock
 
+gmail-visibility-manager client help
 gmail-visibility-manager client ping
 gmail-visibility-manager client submit request.json
 gmail-visibility-manager client lookup coach@example.com
 gmail-visibility-manager client grants list
 ```
+
+For AI agents, the client subcommands are intentionally self-describing:
+
+```sh
+gmail-visibility-manager client help
+gmail-visibility-manager client info
+gmail-visibility-manager client schema
+gmail-visibility-manager client sample-request \
+  --email coach@example.com \
+  --label Kids/Activities \
+  --rationale 'Future messages from this coach should be visible for activity planning.' \
+  > request.json
+```
+
+`client info` returns live daemon guidance, including allowed classification labels and the strict request shape.
 
 ## Socket Permissions
 
@@ -274,7 +290,7 @@ Set a bot token in the configured environment variable:
 export GMAIL_VISIBILITY_MANAGER_DISCORD_TOKEN='...'
 ```
 
-The bot listens in `discord.channel_id` and accepts commands only from `discord.allowed_user_ids`.
+The bot accepts commands only from `discord.allowed_user_ids`. If `discord.channel_id` is set, it listens in that channel and posts pending approval prompts there. If `discord.channel_id` is omitted, it uses direct messages with the allowlisted users.
 
 Commands:
 

@@ -42,10 +42,36 @@ type ErrorBody struct {
 }
 
 type SystemInfo struct {
-	Service         string   `json:"service"`
-	Instance        string   `json:"instance"`
-	ProtocolVersion int      `json:"protocol_version"`
-	Methods         []string `json:"methods"`
+	Service         string         `json:"service"`
+	Instance        string         `json:"instance"`
+	ProtocolVersion int            `json:"protocol_version"`
+	Methods         []string       `json:"methods"`
+	Client          ClientGuidance `json:"client"`
+}
+
+type ClientGuidance struct {
+	Purpose                     string                    `json:"purpose"`
+	SocketEnv                   string                    `json:"socket_env"`
+	VisibilityLabel             string                    `json:"visibility_label"`
+	AllowedClassificationLabels []string                  `json:"allowed_classification_labels"`
+	Request                     VisibilityRequestGuidance `json:"request"`
+	Commands                    []CommandGuidance         `json:"commands"`
+	Notes                       []string                  `json:"notes"`
+}
+
+type VisibilityRequestGuidance struct {
+	SchemaVersion  string                    `json:"schema_version"`
+	Actions        []string                  `json:"actions"`
+	RequiredFields []string                  `json:"required_fields"`
+	OptionalFields []string                  `json:"optional_fields"`
+	Example        request.VisibilityRequest `json:"example"`
+}
+
+type CommandGuidance struct {
+	Command     string `json:"command"`
+	Purpose     string `json:"purpose"`
+	WhenToUse   string `json:"when_to_use,omitempty"`
+	MachineSafe bool   `json:"machine_safe"`
 }
 
 type GrantSubmitParams = request.VisibilityRequest

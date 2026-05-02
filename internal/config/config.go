@@ -317,17 +317,14 @@ func (c *DiscordConfig) applyDefaults() {
 
 // Validate checks optional Discord approval config.
 func (c DiscordConfig) Validate() error {
-	if strings.TrimSpace(c.ChannelID) == "" && len(c.AllowedUserIDs) == 0 {
-		return nil
-	}
-	if strings.TrimSpace(c.ChannelID) == "" {
-		return fmt.Errorf("config: discord.channel_id is required when Discord approval is configured")
-	}
 	allowedCount := 0
 	for _, id := range c.AllowedUserIDs {
 		if strings.TrimSpace(id) != "" {
 			allowedCount++
 		}
+	}
+	if strings.TrimSpace(c.ChannelID) == "" && allowedCount == 0 {
+		return nil
 	}
 	if allowedCount == 0 {
 		return fmt.Errorf("config: discord.allowed_user_ids is required when Discord approval is configured")
