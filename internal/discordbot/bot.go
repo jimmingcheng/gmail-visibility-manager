@@ -137,7 +137,7 @@ func (b *Bot) onMessage(_ *discordgo.Session, msg *discordgo.MessageCreate) {
 		b.reply(msg.ChannelID, "commands: pending, show <request-id>, approve <request-id>, deny <request-id> [reason]")
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	switch args[0] {
 	case "pending":
@@ -174,6 +174,20 @@ func (b *Bot) onMessage(_ *discordgo.Session, msg *discordgo.MessageCreate) {
 		}
 		_, grant, reconcile, err := b.manager.Approve(ctx, args[1], "discord:"+msg.Author.ID)
 		if err != nil {
+			if grant.Email != "" {
+				extra := ""
+				if reconcile != nil {
+					extra = "\nGmail: `" + reconcile.Status + "`"
+					if strings.TrimSpace(reconcile.Message) != "" {
+						extra += " - " + escapeLine(reconcile.Message)
+					}
+				}
+				b.reply(msg.ChannelID, fmt.Sprintf(
+					"Approved `%s` for `%s`, but Gmail reconciliation failed: %s%s",
+					args[1], grant.Email, escapeLine(err.Error()), extra,
+				))
+				return
+			}
 			b.reply(msg.ChannelID, "error: "+err.Error())
 			return
 		}

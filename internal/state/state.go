@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	StatusPending = "pending"
-	StatusBlocked = "blocked"
-	StatusDenied  = "denied"
-	StatusApplied = "applied"
+	StatusPending  = "pending"
+	StatusBlocked  = "blocked"
+	StatusDenied   = "denied"
+	StatusApproved = "approved"
+	StatusApplied  = "applied"
 )
 
 // RequestRecord is the trusted persisted view of an untrusted request.
@@ -214,7 +215,7 @@ func (s *Store) Submit(ctx context.Context, eval policy.Evaluation) (RequestReco
 	}, nil
 }
 
-// Approve applies a pending trusted request to the canonical grant table.
+// Approve records human approval and writes the canonical grant table.
 func (s *Store) Approve(ctx context.Context, requestID, approver, visibilityLabel string) (RequestRecord, GrantRecord, error) {
 	requestID = strings.TrimSpace(requestID)
 	approver = strings.TrimSpace(approver)
@@ -274,8 +275,8 @@ func (s *Store) Approve(ctx context.Context, requestID, approver, visibilityLabe
 	}
 
 	_, err = tx.ExecContext(ctx, `UPDATE requests
-		SET status = ?, decided_by = ?, decided_at = ?, applied_at = ?
-		WHERE request_id = ?`, StatusApplied, approver, now, now, requestID)
+		SET status = ?, decided_by = ?, decided_at = ?, applied_at = ''
+		WHERE request_id = ?`, StatusApproved, approver, now, requestID)
 	if err != nil {
 		return RequestRecord{}, GrantRecord{}, fmt.Errorf("update request approval: %w", err)
 	}
@@ -283,15 +284,43 @@ func (s *Store) Approve(ctx context.Context, requestID, approver, visibilityLabe
 	if err := tx.Commit(); err != nil {
 		return RequestRecord{}, GrantRecord{}, err
 	}
-	req.Status = StatusApplied
+	req.Status = StatusApproved
 	req.DecidedBy = approver
 	req.DecidedAt = now
-	req.AppliedAt = now
+	req.AppliedAt = ""
 	grant, err := s.LookupGrant(ctx, req.Email)
 	if err != nil {
 		return RequestRecord{}, GrantRecord{}, err
 	}
 	return req, grant, nil
+}
+
+// MarkRequestApplied records that an approved request has completed enforcement.
+func (s *Store) MarkRequestApplied(ctx context.Context, requestID string) (RequestRecord, error) {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return RequestRecord{}, fmt.Errorf("request id is required")
+	}
+	req, err := s.GetRequest(ctx, requestID)
+	if err != nil {
+		return RequestRecord{}, err
+	}
+	if req.Status == StatusApplied {
+		return req, nil
+	}
+	if req.Status != StatusApproved {
+		return RequestRecord{}, fmt.Errorf("request %s is %s, not approved", requestID, req.Status)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = s.db.ExecContext(ctx, `UPDATE requests
+		SET status = ?, applied_at = ?
+		WHERE request_id = ? AND status = ?`, StatusApplied, now, requestID, StatusApproved)
+	if err != nil {
+		return RequestRecord{}, fmt.Errorf("mark request applied: %w", err)
+	}
+	req.Status = StatusApplied
+	req.AppliedAt = now
+	return req, nil
 }
 
 // Deny marks a pending request denied.

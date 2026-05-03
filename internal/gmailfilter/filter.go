@@ -6,15 +6,15 @@ import (
 	"github.com/jimmingcheng/gmail-visibility-manager/internal/config"
 )
 
-// Spec is the exact Gmail filter shape this manager is allowed to generate.
-// It is intentionally narrower than the Gmail API.
+// Spec is the logical Gmail enforcement shape this manager reconciles.
+// The Gmail API adapter may emit more than one narrow filter to enforce it.
 type Spec struct {
 	From      string   `json:"from"`
 	AddLabels []string `json:"add_labels"`
 }
 
-// CompileGrant compiles one canonical visibility grant into a narrow filter
-// specification. The eventual Gmail API adapter should create only this shape.
+// CompileGrant compiles one canonical visibility grant into a narrow logical
+// filter specification.
 func CompileGrant(email, visibilityLabel string, classificationLabels []string) Spec {
 	labels := append([]string{visibilityLabel}, classificationLabels...)
 	seen := map[string]string{}

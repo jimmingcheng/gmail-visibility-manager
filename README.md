@@ -9,10 +9,11 @@ make future mail from one exact email address Donna-visible,
 and optionally add allowlisted classification labels
 ```
 
-The trusted manager stores a canonical grant, audits the decision, and reconciles that grant into one managed Gmail filter:
+The trusted manager stores a canonical grant, audits the decision, reconciles that grant into managed Gmail filters, and backfills the same labels onto matching historical messages:
 
 ```text
-from:person@example.com -> add labels: Donna, Kids/Activities
+from:person@example.com OR coach@example.com -> add label: Donna
+from:person@example.com -> add label: Kids/Activities
 ```
 
 It is intentionally not a general Gmail filter editor.
@@ -75,13 +76,14 @@ Supported actions:
 
 Existing Gmail filters are not edited by default.
 
-This manager owns only grants in its canonical SQLite state. Gmail filters are generated enforcement artifacts. If an existing exact-sender filter already matches the expected managed shape, `gmail reconcile --apply` can bind that filter ID to the grant. Complex or changed filters are reported as drift and left untouched.
+This manager owns only grants in its canonical SQLite state. Gmail filters are generated enforcement artifacts. Primary visibility filters are grouped by label as exact-email OR filters so one Donna filter can represent many individual grants. Gmail allows one user-defined label per filter, so grant classification labels are still enforced as separate exact-sender filters. When the manager creates filters, it also searches historical mail from the same exact sender and batch-applies the managed labels. If existing exact-sender visibility filters already match the safe managed shape, `gmail reconcile --apply` can consolidate or bind them. Complex or changed filters are left untouched.
 
 Recommended coexistence model:
 
 ```text
 Human-owned filters: existing mailbox organization
-Managed filters: exact sender -> add Donna + classification labels
+Managed Donna filters: exact sender OR groups -> add Donna
+Managed classification filters: exact sender -> add one classification label
 Canonical DB: source of truth for Donna visibility grants
 ```
 
@@ -166,9 +168,12 @@ If you previously authorized with narrower scopes:
 gmail-visibility-manager --config ~/.config/gmail-visibility-manager/config.json auth login --force-consent
 ```
 
+Run this again after upgrading from a version that did not request Gmail modify scope; historical message backfill needs that scope.
+
 Scopes used:
 
 - Gmail readonly, to verify the account and list labels
+- Gmail modify, to batch-apply managed labels to historical matching messages
 - Gmail labels, to resolve label names to IDs
 - Gmail settings basic, to create/list Gmail filters
 
@@ -211,9 +216,10 @@ Reconcile all active grants:
 ```sh
 gmail-visibility-manager --config ./config.local.json gmail reconcile
 gmail-visibility-manager --config ./config.local.json gmail reconcile --apply
+gmail-visibility-manager --config ./config.local.json gmail reconcile --apply --backfill-historical
 ```
 
-Without `--apply`, reconciliation is a dry run. With `--apply`, missing managed filters are created and matching existing filters may be recorded as managed.
+Without `--apply`, reconciliation is a dry run. With `--apply`, missing managed filters are created, exact-sender visibility filters may be grouped or recorded as managed, and newly managed labels are backfilled onto matching historical messages. Add `--backfill-historical` to batch-apply managed labels to historical messages for existing active grants too.
 
 ## Daemon Mode
 
@@ -301,7 +307,7 @@ Commands:
 !gvm deny <request-id> [reason]
 ```
 
-Approving through Discord calls the same trusted manager path as local CLI approval. If Gmail OAuth is configured, approval attempts to create or bind the managed Gmail filter.
+Approving through Discord calls the same trusted manager path as local CLI approval. If Gmail OAuth is configured, approval attempts to create or bind the managed Gmail filters and backfill matching historical messages before the request is marked applied.
 
 Your Discord bot must be allowed to read message content for text commands.
 

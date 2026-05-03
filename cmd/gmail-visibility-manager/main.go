@@ -304,7 +304,8 @@ func runGmail(configPath string, jsonOut bool, args []string) int {
 		return 0
 	case "reconcile":
 		fs := flag.NewFlagSet("gmail reconcile", flag.ContinueOnError)
-		apply := fs.Bool("apply", false, "Create missing managed Gmail filters and record matching filter IDs")
+		apply := fs.Bool("apply", false, "Create missing managed Gmail filters and record matching visibility filter IDs")
+		backfillHistorical := fs.Bool("backfill-historical", false, "Batch-apply managed labels to historical messages for active grants")
 		fs.SetOutput(os.Stderr)
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
@@ -313,15 +314,19 @@ func runGmail(configPath string, jsonOut bool, args []string) int {
 			fs.Usage()
 			return 2
 		}
+		if *backfillHistorical && !*apply {
+			fmt.Fprintln(os.Stderr, "--backfill-historical requires --apply")
+			return 2
+		}
 		cfg, mgr, ok := openManager(configPath)
 		_ = cfg
 		if !ok {
 			return 1
 		}
 		defer mgr.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		results, err := mgr.ReconcileAll(ctx, *apply)
+		results, err := mgr.ReconcileAll(ctx, *apply, *backfillHistorical)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			if jsonOut {
@@ -779,7 +784,7 @@ func runApprove(configPath string, jsonOut bool, args []string) int {
 		return 1
 	}
 	defer mgr.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	req, grant, reconcile, err := mgr.Approve(ctx, fs.Arg(0), *by)
 	if err != nil {
@@ -1168,7 +1173,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] config init|validate")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] auth login")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] gmail profile")
-	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] gmail reconcile [--apply]")
+	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] gmail reconcile [--apply] [--backfill-historical]")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] service print-systemd|print-launchd [--binary PATH]")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--socket PATH] client help|info|schema|sample-request|ping|submit|lookup|grants list")
 	fmt.Fprintln(w, "  gmail-visibility-manager [--config PATH] validate request.json")

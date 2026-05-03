@@ -42,8 +42,11 @@ func TestSubmitApproveCreatesCanonicalGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approved.Status != StatusApplied {
+	if approved.Status != StatusApproved {
 		t.Fatalf("approved status = %s", approved.Status)
+	}
+	if approved.AppliedAt != "" {
+		t.Fatalf("approved applied_at = %s", approved.AppliedAt)
 	}
 	if grant.Email != "coach@example.com" {
 		t.Fatalf("grant email = %s", grant.Email)
@@ -53,6 +56,16 @@ func TestSubmitApproveCreatesCanonicalGrant(t *testing.T) {
 	}
 	if len(grant.ClassificationLabels) != 1 || grant.ClassificationLabels[0] != "Kids/Activities" {
 		t.Fatalf("grant labels = %#v", grant.ClassificationLabels)
+	}
+	applied, err := store.MarkRequestApplied(ctx, "req-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.Status != StatusApplied {
+		t.Fatalf("applied status = %s", applied.Status)
+	}
+	if applied.AppliedAt == "" {
+		t.Fatal("expected applied_at")
 	}
 }
 
